@@ -34,9 +34,7 @@ variables:
     description: "<catalog>.<schema> the model job writes to and the app reads (created if missing)."
     default: ${var.catalog}.armor
   warehouse_id:
-    description: "SQL warehouse the app queries through (looked up by name; override with --var warehouse_id=<id>)."
-    lookup:
-      warehouse: "Serverless Starter Warehouse"
+    description: "SQL warehouse the app queries through. scripts/bundle.sh picks a serverless warehouse on the first deploy and saves it in .databricks/bundle/<target>/variable-overrides.json; override with --var warehouse_id=<id>."
   app_name:
     description: Databricks App name (lowercase, hyphens, 30 characters at most).
     default: armor-capital-planner

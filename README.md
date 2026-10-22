@@ -24,8 +24,8 @@ data once you map your tables to its asset data model (see [Make it yours](#make
 ## Installation
 
 You need a Databricks workspace with Unity Catalog, serverless compute and Databricks Apps; an existing catalog you
-can create schemas in; a SQL warehouse; the [Databricks CLI](https://github.com/databricks/cli) and Node.js 20+
-(to build the app's web client).
+can create schemas in; a SQL warehouse (serverless recommended); the [Databricks CLI](https://github.com/databricks/cli),
+Python 3 and Node.js 20+ (to build the app's web client).
 
 ```bash
 git clone https://github.com/databricks-industry-solutions/asset-risk-and-capital-planning.git
@@ -54,7 +54,7 @@ Variables (all have defaults, set with `--var name=value`):
 | `catalog` | `main` | Existing catalog to deploy into |
 | `input_schema` | `<catalog>.armor_demo_input` | The asset data model: the demo data, or views over your own tables |
 | `output_schema` | `<catalog>.armor` | Where the model writes and the app reads |
-| `warehouse_id` | the warehouse named `Serverless Starter Warehouse` | SQL warehouse the app queries |
+| `warehouse_id` | a serverless SQL warehouse in the workspace, picked on the first `scripts/bundle.sh` run and saved in `.databricks/bundle/dev/variable-overrides.json` | SQL warehouse the app queries |
 | `app_name` | `armor-capital-planner` | The Databricks App |
 | `lakebase_instance`, `genie_space_id` | empty (off) | Optional Lakebase lookups and Genie space; see [`targets/README.md`](targets/README.md) |
 
@@ -129,7 +129,7 @@ jobs/                      generate_demo_data.py (demo) and run_model.py (check 
 app/                       the Capital Planner app: FastAPI engine (app.py) + React client (app/client)
 config/reference_model.yml the reference model's settings, copied into every model run
 databricks.yml, resources/ the bundle: app, armor_demo job, armor_model job
-scripts/                   bundle.sh (deploy builds the app first), build_app.sh, cleanup.sh
+scripts/                   bundle.sh (picks the warehouse once; deploy builds the app first), pick_warehouse.py, build_app.sh, cleanup.sh
 tests/                     unit tests: python -m pytest tests
 ```
 
