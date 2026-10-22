@@ -1,0 +1,22 @@
+# The model job (jobs/run_model.py): check the asset data model, fit the reference probability model, write the
+# probability contract and review tables, rebuild the serving tables (refreshing Lakebase if set up), backtest.
+resources:
+  jobs:
+    armor_model:
+      name: ${bundle.name}_model
+      max_concurrent_runs: 1
+      environments:
+        - environment_key: default
+          spec:
+            client: "2"
+            dependencies:
+              - scipy
+              - pyyaml
+              - databricks-sdk>=0.77     # Lakebase synced-table refresh (w.database)
+      tasks:
+        - task_key: run_model
+          environment_key: default
+          spark_python_task:
+            python_file: ../jobs/run_model.py
+            parameters: [--input_schema, "${var.input_schema}", --output_schema, "${var.output_schema}",
+                         --src_dir, "${workspace.file_path}"]

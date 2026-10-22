@@ -1,0 +1,19 @@
+@import "@databricks/appkit-ui/styles.css";
+@import "maplibre-gl/dist/maplibre-gl.css";
+@source "../node_modules/@databricks/appkit-ui/dist";
+
+/* ARMOR accent (same as the original app) */
+:root {
+  --armor: #ff6b35;
+}
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  font-feature-settings: "tnum" 1;
+}
+.maplibregl-ctrl-attrib {
+  font-size: 10px;
+}

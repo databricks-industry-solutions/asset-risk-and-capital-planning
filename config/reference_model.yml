@@ -1,0 +1,34 @@
+# Settings of the SHIPPED REFERENCE probability model (armor.model). These are modeling choices, not facts about
+# the utility; every run copies them into model_run.details_json so a reviewer sees exactly what was used.
+# Swap the whole model by writing pof_forecast / new_asset_curve / model_run yourself (contract/asset_data_model.yml, section model_outputs).
+
+horizon_years: 30
+
+# Life curves: one Weibull per asset_class, then one per cohort inside the class.
+cohorts:
+  # Columns of `asset` that define a cohort, per class. `default` applies to classes not listed.
+  # Change these (or run notebooks/cohort_advisor) to regroup; a cohort is only fitted on its own when it has
+  # enough end-of-life events, otherwise it borrows from the class curve (see shrinkage).
+  keys:
+    default: [material, treatment]
+    # per class, keyed by the utility's own asset_class value, e.g.  <class>: [material, treatment, size_class]
+  min_events: 30            # below this a cohort uses the class curve unchanged (source = class)
+  shrinkage_events: 50      # a cohort with this many events gets 50% own data, 50% class curve (log-parameter space)
+
+# Share of end-of-life events that happen as in-service failures (vs caught and replaced planned),
+# measured from this many most recent years of removals, per class. Classes whose removals are only
+# `end_of_life` (no failure/condition split) get NULL: the data can't tell.
+failure_share_years: 10
+
+# A replacement is built to today's standard. Which curve represents that, per class:
+#   class = the class-wide fitted curve (default: an honest choice when modern cohorts have too few
+#   failures to fit on their own); or a cohort label "material|treatment" to use that cohort's curve.
+new_asset_curve:
+  default: class
+
+backtest:
+  # Origins are placed relative to the data's as-of date, never on fixed calendar years: fit on data up to Jan 1 of
+  # (as-of year - n) for each n, forecast the next horizon_years. An origin with no removal records before it, or no
+  # full year observed after it, is skipped and reported; each origin's horizon stops at the as-of date.
+  origin_years_before_as_of: [9, 6, 3]
+  horizon_years: 5

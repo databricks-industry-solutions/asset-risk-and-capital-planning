@@ -1,0 +1,9 @@
+fastapi>=0.110
+uvicorn>=0.29
+databricks-sdk>=0.77  # w.database (Lakebase) and statement parameters
+pandas>=2.0
+numpy>=1.26
+scipy>=1.11
+pyarrow>=14
+pyyaml>=6
+psycopg[binary]>=3.1

@@ -24,4 +24,15 @@ build/
 
 # Environment files
 .env
-.env.local 
+.env.local
+localdata/
+__pycache__/
+*.pyc
+.pytest_cache/
+app/client/node_modules/
+app/client/dist/
+app/src/
+app/contract/
+app/config/
+.databricks/
+targets/*.yml

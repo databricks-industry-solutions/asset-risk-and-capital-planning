@@ -1,0 +1,25 @@
+# The ARMOR decision app (app/). Its data locations come from the bundle variables (databricks.yml).
+resources:
+  apps:
+    armor:
+      name: ${var.app_name}
+      description: ARMOR capital planner on the utility's asset data model.
+      source_code_path: ../app
+      compute_size: LARGE          # the app holds the portfolio and its forecasts in memory
+      config:
+        command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+        env:
+          - name: DATABRICKS_WAREHOUSE_ID
+            value_from: sql-warehouse
+          - name: ARMOR_INPUT_SCHEMA
+            value: ${var.input_schema}
+          - name: ARMOR_OUTPUT_SCHEMA
+            value: ${var.output_schema}
+          # ARMOR_LAKEBASE_INSTANCE / ARMOR_LAKEBASE_DATABASE are added by targets that serve asset lookups from
+          # Lakebase (set them in the target, with its database resource); without them lookups use the SQL warehouse.
+          # ARMOR_GENIE_SPACE_ID is added the same way by targets with a Genie space (with its genie_space resource).
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE

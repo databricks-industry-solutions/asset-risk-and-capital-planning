@@ -1,0 +1,221 @@
+# =====================================================================================================
+# ARMOR ASSET DATA MODEL: the one thing a utility must produce.
+#
+# This file is the single source of truth for what ARMOR reads. Nothing else in the repo names an input
+# table or column. docs/REQUIRED_INPUTS.md is generated from it (python -m armor.contract --doc).
+#
+# It is deliberately opinionated. Every column has a type, a unit, and a meaning; every code column has a
+# closed vocabulary. ARMOR checks STRUCTURE only: tables exist, columns exist with the declared type,
+# required columns are not null, keys are unique, references resolve, codes are in the vocabulary, and
+# bounded quantities are inside their physical domain (a percent is 0-100, a probability 0-1). It does NOT
+# judge whether the data "looks realistic": no distribution checks, no realism bands.
+#
+# How to comply: write one view per table in a schema of your choice, renaming and recoding your source
+# columns into this shape (examples/curated_grid_views/contract_views.sql is an illustrative example). Derive nothing
+# that isn't a fact about your system. If you don't have a table marked optional, don't create it: the
+# features that need it are switched off and say so.
+#
+# Units are fixed. Money is USD (nominal, no inflation adjustment). Time is years for ages and planning,
+# minutes for outage durations. Coordinates are WGS84 decimal degrees.
+# =====================================================================================================
+version: "2.0"
+
+codes:
+  removal_reason:
+    failure:     "Removed after it FAILED IN SERVICE on its own (deterioration, end of life). Unplanned."
+    condition:   "Removed on a PLANNED basis because inspection or testing found it at end of life (e.g. a pole reject)."
+    end_of_life: "Removed at end of life, but your records don't say whether it failed first or was caught. Use only when you can't tell failure from condition."
+    program:     "Removed by a capital program for reasons other than its own condition (feeder rebuild, voltage conversion, undergrounding, relocation)."
+    damage:      "Removed after external damage: storm, vehicle, fire, third party. Not deterioration."
+    other:       "Any other removal. Treated like program/damage: the asset's life was cut short, it didn't end."
+  inspection_outcome:
+    pass:            "No actionable finding."
+    finding:         "A finding that doesn't require removal (e.g. pass with decay, treat)."
+    reject:          "Must be replaced or restored; planned timeframe."
+    priority_reject: "Must be addressed urgently (safety / imminent failure). ARMOR treats these as must-address."
+  action:
+    replace:   "Remove the asset and install a new one to the current standard."
+    reinforce: "Restore strength without replacing (e.g. pole truss / FRP wrap)."
+    inspect:   "A condition inspection (used for inspection program costs)."
+  cost_basis:
+    planned:   "Cost when the work is scheduled."
+    emergency: "Cost when the work follows an in-service failure (overtime, callout, expedited)."
+  class_parameter:
+    failure_share: {unit: fraction, domain: [0, 1], meaning: "Share of end-of-life events of this class that happen as in-service failures (the rest are caught and replaced planned). Supply it when your removal records only say end_of_life, e.g. from outage cause codes; state the source."}
+    planned_outage_setup_minutes: {unit: minutes, domain: [0, null], meaning: "Customer interruption per planned replacement job, however many units the job does: switching, isolating, grounding and restoring. The customers are those behind the asset's upstream protective device. 0 where the work is done energized (live-line or bypass)."}
+    planned_outage_minutes_per_asset: {unit: minutes, domain: [0, null], meaning: "Additional customer interruption for each unit replaced in a planned job. 0 where the work is done energized."}
+    mobilization_usd: {unit: USD, domain: [0, null], meaning: "Fixed cost of one crew visit (travel, setup, traffic control), paid once per visit however many units it replaces. Only supply it when action_cost planned is the per-unit cost WITHOUT mobilization; if your unit cost is all-in, leave it out."}
+    assets_per_visit: {unit: assets, domain: [1, null], meaning: "Most units one crew visit can replace (crew-day capacity). A bundle larger than this takes more visits, each with its own mobilization and setup outage. Absent = no limit per visit."}
+  planning_parameter:
+    discount_rate:         {unit: fraction_per_year, domain: [0, 1], meaning: "Real or nominal rate used to discount future costs and benefits to today."}
+    customer_minute_value: {unit: USD_per_customer_minute, domain: [0, null], meaning: "What one customer-minute of interruption is worth in the plan (e.g. from the DOE ICE calculator or your regulator)."}
+
+tables:
+  # -------------------------------------------------------------------------------------------------
+  asset:
+    required: true
+    grain: "One row per physical asset UNIT ever in service: active units AND removed units. When a unit is replaced, the old unit keeps its row (with removal_date/removal_reason) and the new unit gets a new row at the same position_id."
+    why: "Life curves are learned from units that ended their life (removed) as much as from units still standing. ARMOR plans only on active units (removal_date IS NULL)."
+    primary_key: [asset_id]
+    columns:
+      asset_id:       {type: string, required: true, meaning: "Unique id of this physical unit."}
+      asset_class:    {type: string, required: true, meaning: "What kind of asset (pole, conductor_span, transformer, fuse, recloser, ...). Your own vocabulary; every class must have a record_window row."}
+      position_id:    {type: string, required: true, meaning: "The location the unit occupies. All units that replaced each other share it. If you don't track replacements, use asset_id."}
+      install_date:   {type: date, required: true, meaning: "Date the unit went into service."}
+      removal_date:   {type: date, required: false, meaning: "Date the unit left service. NULL = in service today."}
+      removal_reason: {type: string, required: false, codes: removal_reason, required_when: "removal_date IS NOT NULL", meaning: "Why it left service."}
+      feeder_id:      {type: string, required: true, meaning: "Distribution circuit the unit is on."}
+      upstream_device_id: {type: string, required: true, references: device.device_id, meaning: "The protective device that opens when THIS asset fails (for a device asset, the device above it)."}
+      latitude:       {type: double, unit: degrees, domain: [-90, 90], required: true}
+      longitude:      {type: double, unit: degrees, domain: [-180, 180], required: true}
+      end_latitude:   {type: double, unit: degrees, domain: [-90, 90], required: false, meaning: "Linear assets (conductor spans, cables): the far end. The map draws the asset as a line from (latitude, longitude). NULL for point assets."}
+      end_longitude:  {type: double, unit: degrees, domain: [-180, 180], required: false}
+      parent_position_id: {type: string, required: false, meaning: "The position the circuit comes from (e.g. the upstream pole). Lets the map draw the network as lines between structures. NULL at a feeder head or if you don't track it."}
+      cohort:         {type: string, required: false, meaning: "Your own cohort label for this unit (any grouping you plan by: manufacturer, vintage program, spec). When given, the life curves are fitted per this label and the material/treatment/size_class columns are not used to group. NULL = build cohorts from the columns listed in the model settings."}
+      material:       {type: string, required: false, meaning: "Cohort attribute (e.g. pine, cedar, steel; conductor material). NULL if unknown."}
+      treatment:      {type: string, required: false, meaning: "Cohort attribute (e.g. creosote, penta, CCA). NULL if unknown."}
+      size_class:     {type: string, required: false, meaning: "Cohort attribute (e.g. pole class 1-5, kVA band, conductor size)."}
+      cost_zone:      {type: string, required: false, meaning: "Which cost row applies (e.g. urban/suburban/rural). Matches action_cost.cost_zone. NULL = the class-wide cost."}
+      customers_interrupted_on_failure: {type: long, unit: customers, domain: [0, null], required: false, meaning: "Override for customers who lose power when this asset fails, if not all customers below upstream_device_id (e.g. a transformer serving 8 premises under a fuse serving 200). NULL = use the upstream device's customers_downstream."}
+
+  # -------------------------------------------------------------------------------------------------
+  record_window:
+    required: true
+    grain: "One row per asset_class."
+    why: "Removal records rarely go back to the first installs. A unit installed in 1950 that failed in 1975, before your records began, is simply missing. ARMOR corrects for that (left truncation) only if it knows when the record starts. Without it, old cohorts look stronger than they were."
+    primary_key: [asset_class]
+    columns:
+      asset_class:        {type: string, required: true}
+      records_start_date: {type: date, required: true, meaning: "First date from which removals of this class are completely recorded."}
+      source:             {type: string, required: true, meaning: "How you know (system go-live date, data migration note, ...)."}
+
+  # -------------------------------------------------------------------------------------------------
+  device:
+    required: true
+    grain: "One row per protective / sectionalizing device (breaker, recloser, fuse, switch)."
+    why: "Consequence: who loses power when an asset fails."
+    primary_key: [device_id]
+    columns:
+      device_id:            {type: string, required: true}
+      device_type:          {type: string, required: true, meaning: "breaker / recloser / fuse / switch / ... (your vocabulary)."}
+      feeder_id:            {type: string, required: true}
+      parent_device_id:     {type: string, required: false, references: device.device_id, meaning: "Next device upstream. NULL at the feeder head."}
+      customers_downstream: {type: long, unit: customers, domain: [0, null], required: true, meaning: "Customers interrupted when this device opens (all customers below it, cumulative)."}
+      latitude:             {type: double, unit: degrees, domain: [-90, 90], required: false}
+      longitude:            {type: double, unit: degrees, domain: [-180, 180], required: false}
+
+  # -------------------------------------------------------------------------------------------------
+  inspection:
+    required: false
+    enables: "The reject backlog: unresolved reject / priority_reject findings, funded first (by their deadlines) when the plan's 'Clear the reject backlog first' setting is on. (Using test results to adjust an individual asset's probability is a future step.)"
+    grain: "One row per inspection of one unit."
+    primary_key: [inspection_id]
+    columns:
+      inspection_id:   {type: string, required: true}
+      asset_id:        {type: string, required: true, references: asset.asset_id}
+      inspection_date: {type: date, required: true}
+      method:          {type: string, required: true, meaning: "Your inspection method (visual, groundline_bore, resistograph, drone, ...)."}
+      outcome:         {type: string, required: true, codes: inspection_outcome}
+      remaining_strength_pct: {type: double, unit: percent_of_new, domain: [0, 100], required: false, meaning: "Measured remaining strength as % of a new unit's design strength. NULL when the method doesn't measure it."}
+      resolved_date:   {type: date, required: false, meaning: "For reject / priority_reject: date the finding was resolved (asset replaced or restored). NULL = still open."}
+
+  # -------------------------------------------------------------------------------------------------
+  outage:
+    required: false
+    enables: "Restoration time per failure (customer-minutes at risk). Without it the plan values only customers interrupted and costs."
+    grain: "One row per sustained interruption event."
+    primary_key: [outage_id]
+    columns:
+      outage_id:             {type: string, required: true}
+      device_id:             {type: string, required: true, references: device.device_id, meaning: "Device that opened."}
+      failed_asset_id:       {type: string, required: false, references: asset.asset_id, meaning: "The asset whose failure caused it, when known."}
+      cause_code:            {type: string, required: true, meaning: "Your cause vocabulary (kept for display)."}
+      start_ts:              {type: timestamp, required: true}
+      restore_ts:            {type: timestamp, required: true, meaning: "Last customer restored."}
+      customers_interrupted: {type: long, unit: customers, domain: [0, null], required: true}
+      major_event_day:       {type: boolean, required: true, meaning: "IEEE 1366 major event day. MED events are excluded from blue-sky restoration times."}
+
+  # -------------------------------------------------------------------------------------------------
+  action_cost:
+    required: false
+    enables: "Dollars: risk in USD, budgets, the optimizer, and program comparison. Without it ARMOR shows probabilities and customers only."
+    grain: "One row per asset_class x action x cost_basis x cost_zone."
+    primary_key: [asset_class, action, cost_basis, cost_zone]
+    columns:
+      asset_class:   {type: string, required: true}
+      action:        {type: string, required: true, codes: action}
+      cost_basis:    {type: string, required: true, codes: cost_basis}
+      cost_zone:     {type: string, required: false, meaning: "NULL = applies to every zone of the class."}
+      usd_per_asset: {type: double, unit: USD, domain: [0, null], required: true}
+      source:        {type: string, required: true, meaning: "Where the number comes from (rate book, work-order average 2019-2023, ...)."}
+
+  # -------------------------------------------------------------------------------------------------
+  planning_parameter:
+    required: false
+    enables: "Discounting and the value of customer-minutes. Without a customer_minute_value, reliability benefit is reported in customer-minutes, not dollars."
+    grain: "One row per parameter."
+    primary_key: [parameter]
+    columns:
+      parameter: {type: string, required: true, codes: planning_parameter}
+      value:     {type: double, required: true, meaning: "In the unit the parameter code declares."}
+      unit:      {type: string, required: true, meaning: "Must equal the declared unit (a guard against a percent passed as a fraction)."}
+      source:    {type: string, required: true}
+
+  # -------------------------------------------------------------------------------------------------
+  class_parameter:
+    required: false
+    enables: "Per-class facts the removal records can't provide. failure_share lets classes whose removals only say end_of_life show in-service failures, SAIFI, SAIDI and risk $. The planned-outage minutes value the interruption a planned replacement causes (value of replacing = unplanned - planned customer-minutes). mobilization_usd and the setup minutes are shared by the units of one visit, so the plan can bundle nearby work; assets_per_visit caps a visit."
+    grain: "One row per asset_class x parameter."
+    primary_key: [asset_class, parameter]
+    columns:
+      asset_class: {type: string, required: true}
+      parameter:   {type: string, required: true, codes: class_parameter}
+      value:       {type: double, required: true}
+      unit:        {type: string, required: true, meaning: "Must equal the declared unit."}
+      source:      {type: string, required: true}
+
+  # -------------------------------------------------------------------------------------------------
+  capital_history:
+    required: false
+    enables: "Actual capital spend in the historical replacement activity view. Without it, history is shown as replacement volumes, and dollars are an estimate at today's planned cost."
+    grain: "One row per year x asset_class."
+    primary_key: [year, asset_class]
+    columns:
+      year:        {type: int, required: true}
+      asset_class: {type: string, required: true}
+      capex_usd:   {type: double, unit: USD, domain: [0, null], required: true, meaning: "Replacement capital actually spent that year (nominal)."}
+      source:      {type: string, required: true}
+
+# =====================================================================================================
+# PROBABILITY CONTRACT: what any probability model hands to the decision engine.
+# The shipped reference model (armor.model) writes these, but any model may: CNAIM, an ML model, a vendor
+# feed. The decision engine reads only these two tables for probabilities; it never fits anything.
+# =====================================================================================================
+model_outputs:
+  pof_forecast:
+    grain: "One row per ACTIVE asset x forecast year, year_offset 1..horizon."
+    primary_key: [asset_id, year_offset]
+    columns:
+      asset_id:     {type: string, required: true, references: asset.asset_id}
+      year_offset:  {type: int, required: true, meaning: "1 = the first year after as_of_date."}
+      p_end_of_life: {type: double, unit: probability, domain: [0, 1], required: true, meaning: "P(the asset reaches end of life in this year | it is still in service at the start of the year and nothing is done to it)."}
+      p_failure_given_eol: {type: double, unit: probability, domain: [0, 1], required: false, meaning: "Share of those end-of-life events that happen as an in-service failure (the rest are caught and replaced planned). NULL = the data can't tell."}
+      model_id:     {type: string, required: true, references: model_run.model_id}
+  new_asset_curve:
+    grain: "One row per asset_class x age year, for a unit built to today's standard (what a replacement becomes)."
+    primary_key: [asset_class, age_year]
+    columns:
+      asset_class:   {type: string, required: true}
+      age_year:      {type: int, required: true, meaning: "0 = first year in service."}
+      p_end_of_life: {type: double, unit: probability, domain: [0, 1], required: true}
+      p_failure_given_eol: {type: double, unit: probability, domain: [0, 1], required: false}
+      model_id:      {type: string, required: true, references: model_run.model_id}
+  model_run:
+    grain: "One row per model run."
+    primary_key: [model_id]
+    columns:
+      model_id:   {type: string, required: true}
+      as_of_date: {type: date, required: true, meaning: "Forecast origin: year_offset 1 is the year after this date."}
+      method:     {type: string, required: true, meaning: "Human-readable description of the method."}
+      created_at: {type: timestamp, required: true}
+      details_json: {type: string, required: true, meaning: "Everything a reviewer needs to reproduce the model (fitted parameters, cohorts, settings)."}

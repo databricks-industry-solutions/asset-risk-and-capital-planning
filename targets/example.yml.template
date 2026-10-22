@@ -1,0 +1,32 @@
+# A deployment target for one utility. Copy to targets/<name>.yml (git ignores targets/*.yml), fill in, then
+#     scripts/bundle.sh deploy -t <name> --profile <profile>
+targets:
+  my_utility:
+    mode: production
+    workspace:
+      host: https://<your-workspace>.cloud.databricks.com
+    variables:
+      input_schema: <catalog>.<schema>        # the views over your data, in the asset data model (contract/)
+      output_schema: <catalog>.<schema>       # where the model job writes; the app reads it
+      warehouse_id: <sql warehouse id>
+      app_name: <app-name>                    # lowercase, hyphens, 30 characters at most
+      # Optional Lakebase serving of asset lookups (tools/setup_serving.py): set the instance, then uncomment the
+      # env and resource below.
+      # lakebase_instance: <instance name>
+      # Optional Genie space for the Ask page (over input_schema and output_schema): set its id, then uncomment the
+      # ARMOR_GENIE_SPACE_ID env and the genie-space resource below.
+      # genie_space_id: <genie space id>
+    # resources:
+    #   apps:
+    #     armor:
+    #       config:
+    #         env:
+    #           - {name: ARMOR_LAKEBASE_INSTANCE, value: "${var.lakebase_instance}"}
+    #           - {name: ARMOR_LAKEBASE_DATABASE, value: "${var.lakebase_database}"}
+    #           - {name: ARMOR_GENIE_SPACE_ID, value: "${var.genie_space_id}"}
+    #           - {name: ARMOR_GENIE_QUESTIONS, value: "<question 1>|<question 2>"}   # optional starter questions
+    #       resources:
+    #         - name: serving-db
+    #           database: {instance_name: "${var.lakebase_instance}", database_name: "${var.lakebase_database}", permission: CAN_CONNECT_AND_CREATE}
+    #         - name: genie-space
+    #           genie_space: {name: ARMOR Genie space, space_id: "${var.genie_space_id}", permission: CAN_RUN}

@@ -1,0 +1,30 @@
+# The demo job: generate a fictional utility in the asset data model (jobs/generate_demo_data.py, armor.demo), grant
+# the app read access, then run the model (jobs/run_model.py). For your own data run armor_model instead.
+resources:
+  jobs:
+    armor_demo:
+      name: ${bundle.name}_demo
+      max_concurrent_runs: 1
+      environments:
+        - environment_key: default
+          spec:
+            client: "2"
+            dependencies:
+              - scipy
+              - pyyaml
+              - databricks-sdk>=0.77
+      tasks:
+        - task_key: generate_demo_data
+          environment_key: default
+          spark_python_task:
+            python_file: ../jobs/generate_demo_data.py
+            parameters: [--input_schema, "${var.input_schema}", --output_schema, "${var.output_schema}",
+                         --app_name, "${var.app_name}", --src_dir, "${workspace.file_path}"]
+        - task_key: run_model
+          depends_on:
+            - task_key: generate_demo_data
+          environment_key: default
+          spark_python_task:
+            python_file: ../jobs/run_model.py
+            parameters: [--input_schema, "${var.input_schema}", --output_schema, "${var.output_schema}",
+                         --src_dir, "${workspace.file_path}"]
