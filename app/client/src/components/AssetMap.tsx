@@ -5,9 +5,14 @@
 // The map reports the selection polygon; the page decides what it means (a candidate set, a focus area).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import MapGL, { useControl, type MapRef } from "react-map-gl/maplibre";
+import { setWorkerUrl } from "maplibre-gl";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { MapboxOverlay, type MapboxOverlayProps } from "@deck.gl/mapbox";
 import { PathLayer, PolygonLayer, ScatterplotLayer } from "@deck.gl/layers";
 import type { Frame } from "../lib/api";
+
+// MapLibre 6 looks for its worker next to its own module, which the bundle moves; point it at the bundled worker.
+setWorkerUrl(maplibreWorkerUrl);
 
 export type RGBA = [number, number, number, number];
 export type SelectMode = "pointer" | "box" | "lasso";

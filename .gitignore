@@ -36,3 +36,4 @@ app/contract/
 app/config/
 .databricks/
 targets/*.yml
+*.tsbuildinfo
